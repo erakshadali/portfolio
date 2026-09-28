@@ -238,13 +238,78 @@
   /* ---------- Resume modal ---------- */
   var modal = $("resume-modal");
   var frame = $("resume-frame");
+  var modalBody = modal.querySelector(".modal-body");
   var lastFocus = null;
+  var resumeStarted = false;
+  var PDFJS_BASE = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/";
+
+  /* Android Chrome and a few other browsers can't show a PDF inside an
+     iframe (only an "Open" placeholder), so draw the pages with PDF.js. */
+  function needsPdfJs() {
+    return (
+      navigator.pdfViewerEnabled === false || /Android/i.test(navigator.userAgent)
+    );
+  }
+
+  function resumePreviewFailed() {
+    modalBody.innerHTML =
+      '<p class="pdf-msg">Couldn’t load the preview. Use Download or ' +
+      "the link below to open the resume.</p>";
+  }
+
+  function renderResumeWithPdfJs() {
+    var wrap = document.createElement("div");
+    wrap.className = "pdf-pages";
+    wrap.innerHTML = '<p class="pdf-msg">Loading resume…</p>';
+    modalBody.classList.add("fallback");
+    modalBody.appendChild(wrap);
+
+    var s = document.createElement("script");
+    s.src = PDFJS_BASE + "pdf.min.js";
+    s.onerror = resumePreviewFailed;
+    s.onload = function () {
+      var lib = window.pdfjsLib;
+      lib.GlobalWorkerOptions.workerSrc = PDFJS_BASE + "pdf.worker.min.js";
+      lib
+        .getDocument("resume.pdf")
+        .promise.then(function (pdf) {
+          var chain = Promise.resolve();
+          for (var n = 1; n <= pdf.numPages; n++) {
+            chain = chain.then(renderPage.bind(null, pdf, n));
+          }
+          return chain;
+        })
+        .catch(resumePreviewFailed);
+    };
+    document.head.appendChild(s);
+
+    function renderPage(pdf, num) {
+      return pdf.getPage(num).then(function (page) {
+        var base = page.getViewport({ scale: 1 });
+        var ratio = Math.min(window.devicePixelRatio || 1, 3);
+        var scale = ((wrap.clientWidth || 320) / base.width) * ratio;
+        var vp = page.getViewport({ scale: scale });
+        var canvas = document.createElement("canvas");
+        canvas.width = vp.width;
+        canvas.height = vp.height;
+        var loading = wrap.querySelector(".pdf-msg");
+        if (loading) loading.remove();
+        wrap.appendChild(canvas);
+        return page.render({ canvasContext: canvas.getContext("2d"), viewport: vp })
+          .promise;
+      });
+    }
+  }
 
   function openResume() {
     lastFocus = document.activeElement;
-    if (!frame.getAttribute("src")) frame.src = "resume.pdf";
     modal.classList.add("open");
     document.body.style.overflow = "hidden";
+    if (!resumeStarted) {
+      resumeStarted = true;
+      if (needsPdfJs()) renderResumeWithPdfJs();
+      else frame.src = "resume.pdf";
+    }
     modal.querySelector(".modal-close").focus();
   }
   function closeResume() {
