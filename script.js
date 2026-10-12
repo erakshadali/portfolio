@@ -357,9 +357,11 @@
     btn.disabled = true;
     btn.textContent = "Sending...";
 
+    var data = new FormData(form);
+
     fetch(form.action, {
       method: "POST",
-      body: new FormData(form),
+      body: data,
       headers: { Accept: "application/json" },
     })
       .then(function (res) {
